@@ -26,7 +26,9 @@
 #include <io.h>
 #include <windows.h>
 #include <winsock2.h>
-#define strcasecmp(x, y) _stricmp((x), (y))
+#ifndef strcasecmp
+    #define strcasecmp(x, y) _stricmp((x), (y))
+#endif
 #define mkdir(x, y) _mkdir(x)
 #if defined(_MSC_VER) && _MSC_VER < 1700
 #define snprintf _snprintf
@@ -638,7 +640,7 @@ static void spiattach(struct ctx *ctx) {
     unsigned a = 0, b = 0, c = 0, d = 0, e = 0;
     sscanf(ctx->fspi, "%u,%u,%u,%u,%u", &a, &b, &c, &e, &d);
     d3[0] = a | (b << 6) | (c << 12) | (d << 18) | (e << 24);
-    // printf("-----> %u,%u,%u,%u,%u -> %x\n", a, b, c, d, e, pins);
+    //printf("-----> %u,%u,%u,%u,%u\n", a, b, c, e, d);
   }
   if (cmd(ctx, 13, d3, sizeof(d3), 0, 250)) fail("SPI_ATTACH failed\n");
   // flash_id, flash size, block_size, sector_size, page_size, status_mask
@@ -861,7 +863,7 @@ static const char *download(const char *url) {
   return slash + 1;
 }
 
-static void flash(struct ctx *ctx, const char **args) {
+static int flash(struct ctx *ctx, const char **args) {
   uint16_t flash_params = 0;
   if (!chip_connect(ctx)) fail("Error connecting\n");
   if (ctx->fpar != NULL) flash_params = (uint16_t) strtoul(ctx->fpar, NULL, 0);
@@ -881,6 +883,7 @@ static void flash(struct ctx *ctx, const char **args) {
       uint32_t d5[] = {ctx->chip.bla, 16};
       if (cmd(ctx, 14, d5, sizeof(d5), 0, 2000) != 0) {
         printf("Error: can't read bootloader @ addr %#x\n", ctx->chip.bla);
+        return 1;
       } else if (ctx->slip.buf[8] != 0xe9) {
         printf("Wrong magic for bootloader @ addr %#x\n", ctx->chip.bla);
       } else {
@@ -929,6 +932,8 @@ static void flash(struct ctx *ctx, const char **args) {
   }
 
   hard_reset(ctx->fd);
+
+  return 0;
 }
 
 static unsigned long align_to(unsigned long n, unsigned to) {
@@ -1098,7 +1103,6 @@ int main(int argc, const char **argv) {
   int i;
 
   ctx.port = getenv("PORT");          // Serial port
-  ctx.port = getenv("PORT");          // Serial port
   ctx.baud = getenv("BAUD");          // Serial port baud rate
   ctx.fpar = getenv("FLASH_PARAMS");  // Flash parameters
   ctx.fspi = getenv("FLASH_SPI");     // Flash SPI pins
@@ -1166,7 +1170,15 @@ int main(int argc, const char **argv) {
   if (strcmp(*command, "info") == 0) {
     info(&ctx);
   } else if (strcmp(*command, "flash") == 0) {
-    flash(&ctx, &command[1]);
+    for(int j=0; j<2; ++j) {
+      if (!flash(&ctx, &command[1])) break;
+      if (ctx.fspi && !strcmp(ctx.fspi, "6,17,8,11,16")) break;
+      ctx.fspi = "6,17,8,11,16";
+      printf("Trying with alternate FLASH SPI parameters...\n");
+      close(ctx.fd);
+      sleep_ms(100);
+      ctx.fd = open_serial(ctx.port, 115200, ctx.verbose);
+    }
   } else if (strcmp(*command, "readmem") == 0) {
     readmem(&ctx, &command[1]);
   } else if (strcmp(*command, "readflash") == 0) {

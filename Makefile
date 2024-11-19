@@ -11,7 +11,8 @@ $(PROG): esputil.c
 	$(CC) $(CFLAGS) $? -o $(BINDIR)/$@
 
 esputil.exe: esputil.c
-	$(DOCKER) mdashnet/vc98 wine cl /nologo /W3 /MD /Os $? ws2_32.lib /Fe$@
+	x86_64-w64-mingw32-gcc -o esputil.exe esputil.c -l ws2_32
+#	$(DOCKER) mdashnet/vc98 wine cl /nologo /W3 /MD /Os $? ws2_32.lib /Fe$@
 
 wintest: esputil.exe
 	ln -fs $(SERIAL_PORT) ~/.wine/dosdevices/com55 && wine $? -p '\\.\COM55' -v info
